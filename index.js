@@ -88,8 +88,14 @@ const main = async () => {
   console.log(lines.length);
   console.log(`Cite :: ${title} by ${author}`);
 
-  // const summary = await summaries(lines[7]);
-  // console.log(summary);
+  const promises = [];
+  for (let i = 0; i < 3; i++) {
+    const line = lines[i];
+    const promise = summaries(line);
+    promises.push(promise);
+  }
+  const _summaries = await Promise.all(promises);
+  console.log(_summaries);
 };
 
 const summaries = async (originalText) => {
