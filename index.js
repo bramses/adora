@@ -22,9 +22,9 @@ const createDir = async (title) => {
   }
 };
 
-const callOpenAIAPI = async (text, prompt) => {
+const callOpenAIAPI = async (text, prompt, engine = "text-davinci-002", max_tokens = 250) => {
   const response = await fetch(
-    "https://api.openai.com/v1/engines/text-davinci-002/completions",
+    `https://api.openai.com/v1/engines/${engine}/completions`,
     {
       method: "POST",
       headers: {
@@ -34,14 +34,16 @@ const callOpenAIAPI = async (text, prompt) => {
       contentType: "application/json",
       body: JSON.stringify({
         prompt: prompt,
-        max_tokens: 250,
+        max_tokens: max_tokens,
         temperature: 0.3,
-        best_of: 3,
+        best_of: 1,
       }),
     }
   );
 
   const responseJSON = await response.json();
+  console.log(responseJSON);
+
   return responseJSON.choices[0].text;
 };
 
@@ -98,6 +100,11 @@ const main = async () => {
     return !line.trim().startsWith("- Tags: ");
   });
 
+  // remove any lines that start with - Note:
+  lines = lines.filter(function (line) {
+    return !line.trim().startsWith("- Note: ");
+  });
+
   // remove - from the start of each line
   lines = lines.map(function (line) {
     return line.substring(2);
@@ -108,17 +115,27 @@ const main = async () => {
     return line.split("([Location")[0].trim();
   });
 
-  console.log(lines.length);
+  lines.forEach((line, idx) => {
+    console.log(idx + ' : ' + line);
+    console.log("---");
+  });
+
+  console.log(lines.length)
   console.log(`Cite :: ${title} by ${author}`);
 
   const promises = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const promise = summaries(line);
     promises.push(promise);
   }
-  const _summaries = await Promise.all(promises);
-  console.log(_summaries);
+
+  const _summaries = []
+  for await (const summary of promises) {
+    console.log(summary);
+    _summaries.push(summary);
+  }
+
   const resEx = buildFile(
     title,
     author,
@@ -141,21 +158,31 @@ const main = async () => {
       .trim();
     await writeFile(path + fileName + ".md", buildFrontmatter(title, author, title) + '\n\n' + summary.full);
   }
-};
-
-const summaries = async (originalText) => {
-  const summaryPrompt = `Summarize this text into one tweet.\n\nText:\n${originalText}\n\nSummary:\n`;
-  const summary = await callOpenAIAPI(originalText, summaryPrompt);
-  const tagsPrompt = `Summarize this text into a comma separated list of tags.\n\nText:\n${originalText}\n\nTags:\n`;
-  const tags = await callOpenAIAPI(originalText, tagsPrompt);
-  const titlePrompt = `Suggest a one line title for the following text.\n\nText:\n${originalText}\n\nTitle:\n`;
-  const title = await callOpenAIAPI(originalText, titlePrompt);
-  return {
-    full: `# ${title.trim()}\n\n## Tags:\n${tags}\n\n## Summary:\n${summary}\n\n## Original Text:\n\n${originalText}`,
-    title: title,
-    tags: tags,
-    summary: summary,
   };
+
+  const summaries = async (originalText) => {
+    const summaryPrompt = `Summarize this text into one tweet.\n\nText:\n${originalText}\n\nSummary:\n`;
+    const summary = await callOpenAIAPI(originalText, summaryPrompt, "curie-instruct-beta");
+    // await setTimeout(10000, 'summary');
+    const tagsPrompt = `Summarize this text into a comma separated list of tags.\n\nText:\n${originalText}\n\nTags:\n`;
+    const tags = await callOpenAIAPI(originalText, tagsPrompt, "curie-instruct-beta", 64);
+    // await setTimeout(10000, 'tags');
+    const titlePrompt = `Suggest a one line title for the following text.\n\nText:\n${originalText}\n\nTitle:\n`;
+    const title = await callOpenAIAPI(originalText, titlePrompt, "curie-instruct-beta", 64);
+    let shortTitle = title
+    if (title.length > 64) {
+      shortTitle = title.substring(0, 64) + "...";
+    }
+    shortTitle = shortTitle.replace(/\n/g, ' ');
+
+    console.log(shortTitle);
+    // await setTimeout(10000, 'title');
+    return {
+      full: `# ${shortTitle.trim()}\n\n## Tags:\n${tags}\n\n## Summary:\n${summary}\n\n## Original Text:\n\n${originalText}`,
+      title: shortTitle,
+      tags: tags,
+      summary: summary,
+    };
 };
 
 main();
@@ -165,8 +192,8 @@ const buildFrontmatter = (title, author, readwiseLink) => {
 title: ${title}
 author: ${author}
 readwise: "[[${readwiseLink}]]"
----`
-}
+---`;
+};
 
 const buildFile = (title, author, readwiseLink, highlightFilenames) => {
   const highlightLinks = highlightFilenames.map((filename) => {
@@ -174,7 +201,7 @@ const buildFile = (title, author, readwiseLink, highlightFilenames) => {
       .replace(":", "-")
       .replace("/", "-")
       .replace("\\", "-")
-      .replace(/"/g, '')
+      .replace(/"/g, "")
       .trim()}]]`;
   });
 
