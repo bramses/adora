@@ -22,7 +22,7 @@ const createDir = async (title) => {
   }
 };
 
-const callOpenAIAPI = async (text, prompt, engine = "text-davinci-002", max_tokens = 250) => {
+const callOpenAIAPI = async (text, prompt, engine = "text-davinci-002", max_tokens = 250, best_of = 1) => {
   const response = await fetch(
     `https://api.openai.com/v1/engines/${engine}/completions`,
     {
@@ -36,7 +36,8 @@ const callOpenAIAPI = async (text, prompt, engine = "text-davinci-002", max_toke
         prompt: prompt,
         max_tokens: max_tokens,
         temperature: 0.3,
-        best_of: 1,
+        best_of: best_of,
+        frequency_penalty: 1.5,
       }),
     }
   );
@@ -115,6 +116,11 @@ const main = async () => {
     return line.split("([Location")[0].trim();
   });
 
+  // remove "([View Highlight" from the end of each line
+  lines = lines.map(function (line) {
+    return line.split("([View Highlight")[0].trim();
+  });
+
   lines.forEach((line, idx) => {
     console.log(idx + ' : ' + line);
     console.log("---");
@@ -123,6 +129,9 @@ const main = async () => {
   console.log(lines.length)
   console.log(`Cite :: ${title} by ${author}`);
 
+  if (process.argv[2] === "--dry-run") {
+    return;
+  }
   const promises = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -161,8 +170,8 @@ const main = async () => {
   };
 
   const summaries = async (originalText) => {
-    const summaryPrompt = `Summarize this text into one tweet.\n\nText:\n${originalText}\n\nSummary:\n`;
-    const summary = await callOpenAIAPI(originalText, summaryPrompt, "curie-instruct-beta");
+    const summaryPrompt = `Summarize this text into one 140 character tweet.\n\nText:\n${originalText}\n\nSummary:\n`;
+    const summary = await callOpenAIAPI(originalText, summaryPrompt, "curie-instruct-beta", 140, 1);
     // await setTimeout(10000, 'summary');
     const tagsPrompt = `Summarize this text into a comma separated list of tags.\n\nText:\n${originalText}\n\nTags:\n`;
     const tags = await callOpenAIAPI(originalText, tagsPrompt, "curie-instruct-beta", 64);
@@ -176,7 +185,7 @@ const main = async () => {
     shortTitle = shortTitle.replace(/\n/g, ' ');
 
     console.log(shortTitle);
-    // await setTimeout(10000, 'title');
+
     return {
       full: `# ${shortTitle.trim()}\n\n## Tags:\n${tags}\n\n## Summary:\n${summary}\n\n## Original Text:\n\n${originalText}`,
       title: shortTitle,
